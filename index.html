@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Columnar Transposition Cipher</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔐</text></svg>">
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&';
+
+    function useScramble(target, delay = 0) {
+        const [display, setDisplay] = useState(() => target.split('').map(() => CHARS[Math.floor(Math.random() * CHARS.length)]).join(''));
+        const frameRef = useRef(null);
+        const intervalRef = useRef(null);
+
+        const runScramble = (initialDelay) => {
+            const timeout = setTimeout(() => {
+                let iteration = 0;
+                const total = target.length;
+                const tick = () => {
+                    setDisplay(() =>
+                        target.split('').map((char, i) => {
+                            if (char === ' ') return ' ';
+                            if (i < iteration) return char;
+                            return CHARS[Math.floor(Math.random() * CHARS.length)];
+                        }).join('')
+                    );
+                    iteration += 0.28;
+                    if (iteration < total + 1) {
+                        frameRef.current = requestAnimationFrame(tick);
+                    } else {
+                        setDisplay(target);
+                    }
+                };
+                frameRef.current = requestAnimationFrame(tick);
+            }, initialDelay);
+            return timeout;
+        };
+
+        useEffect(() => {
+            const firstRun = runScramble(delay);
+            return () => {
+                clearTimeout(firstRun);
+                if (frameRef.current) cancelAnimationFrame(frameRef.current);
+            };
+        }, [target, delay]);
+
+        return display;
+    }
+
+    function ScrambleText({ text, delay = 0, className = '' }) {
+        const display = useScramble(text, delay);
+        const locked = display === text;
+
+        return (
+            <span className={className}>
+                {display.split('').map((char, i) => (
+                    <span
+                        key={i}
+                        className={`scramble-char ${char !== text[i] ? 'scrambling' : 'locked'}`}
+                    >
+                        {char}
+                    </span>
+                ))}
+            </span>
+        );
+    }
+
+    function ScrambleNumber({ value }) {
+        const [display, setDisplay] = useState(value);
+        const prev = useRef(value);
+        const frame = useRef(null);
+
+        useEffect(() => {
+            if (value === prev.current) return;
+            prev.current = value;
+            let ticks = 0;
+            const run = () => {
+                setDisplay(Math.floor(Math.random() * 9999));
+                ticks++;
+                if (ticks < 8) frame.current = requestAnimationFrame(run);
+                else setDisplay(value);
+            };
+            frame.current = requestAnimationFrame(run);
+            return () => cancelAnimationFrame(frame.current);
+        }, [value]);
+
+        return <span>{display.toLocaleString()}</span>;
+    }
+
+    function ScrambleOutput({ text, animKey }) {
+        const [display, setDisplay] = useState('');
+        const frameRef = useRef(null);
+
+        useEffect(() => {
+            if (!text) return;
+            let iteration = 0;
+            const total = text.length;
+            const speed = Math.max(0.15, Math.min(0.6, 60 / total));
+
+            const tick = () => {
+                setDisplay(
+                    text.split('').map((char, i) => {
+                        if (i < iteration) return char;
+                        return CHARS[Math.floor(Math.random() * CHARS.length)];
+                    }).join('')
+                );
+                iteration += speed;
+                if (iteration < total + 1) {
+                    frameRef.current = requestAnimationFrame(tick);
+                } else {
+                    setDisplay(text);
+                }
+            };
+
+            frameRef.current = requestAnimationFrame(tick);
+            return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
+        }, [text, animKey]);
+
+        return (
+            <span>{display.split('').map((char, i) => (<span key={i} style={{color: char !== text[i] ? 'var(--teal)' : 'inherit', opacity: char !== text[i] ? 0.7 : 1}}>{char}</span>))}</span>
+        );
+    }
+
+    function ColumnarApp() {
+        const [mode, setMode] = useState('word');
+        const [text, setText] = useState('');
+        const [key, setKey] = useState('');
+        const [result, setResult] = useState(null);
+        const [copied, setCopied] = useState(false);
+        const [ops, setOps] = useState(0);
+        const [stripPadding, setStripPadding] = useState(true);
+        const [animKey, setAnimKey] = useState(0);
+        const [glowing, setGlowing] = useState(false);
+
+        const numCols = useMemo(() => {
+            if (mode === 'number') return parseInt(key) || 0;
+            return key.length;
+        }, [mode, key]);
+
+        const getSequence = (k, m) => {
+            if (m === 'number') {
+                const n = parseInt(k) || 1;
+                return Array.from({length: n}, (_, i) => i);
+            }
+            return k.toUpperCase().split('')
+                .map((char, i) => ({ char, i }))
+                .sort((a, b) => a.char.localeCompare(b.char))
+                .map(item => item.i);
+        };
+
+        const clearAll = () => { setText(''); setResult(null); };
+
+        const encrypt = () => {
+            if (!text) { setResult({ text: 'No message provided.', type: 'error' }); return; }
+            if (!key)  { setResult({ text: `No ${mode==='word'?'key word':'column count'} provided.`, type: 'error' }); return; }
+            if (isNaN(numCols) || numCols < 1) { setResult({ text: 'Column count must be ≥ 1.', type: 'error' }); return; }
+
+            let padded = text;
+            while (padded.length % numCols !== 0) padded += 'X';
+
+            const seq = getSequence(key, mode);
+            let grid = [];
+            for (let i = 0; i < padded.length; i += numCols)
+                grid.push(padded.slice(i, i + numCols).split(''));
+
+            let out = '';
+            seq.forEach(c => grid.forEach(row => out += row[c]));
+            setResult({ text: out, type: 'encrypted' });
+            setOps(n => n + 1);
+            setAnimKey(n => n + 1);
+            setGlowing(true);
+            setTimeout(() => setGlowing(false), 600);
+        };
+
+        const decrypt = () => {
+            if (!text) { setResult({ text: 'No ciphertext provided.', type: 'error' }); return; }
+            if (!key)  { setResult({ text: `No ${mode==='word'?'key word':'column count'} provided.`, type: 'error' }); return; }
+            if (isNaN(numCols) || numCols < 1) { setResult({ text: 'Column count must be ≥ 1.', type: 'error' }); return; }
+            if (text.length % numCols !== 0) {
+                setResult({ text: `Length ${text.length.toLocaleString()} is not divisible by ${numCols} columns.`, type: 'error' });
+                return;
+            }
+
+            const seq = getSequence(key, mode);
+            const numRows = text.length / numCols;
+            let cols = Array(numCols).fill('');
+            let pos = 0;
+            seq.forEach(c => { cols[c] = text.substr(pos, numRows); pos += numRows; });
+
+            let out = '';
+            for (let r = 0; r < numRows; r++)
+                for (let c = 0; c < numCols; c++)
+                    out += cols[c][r];
+
+            const stripped = stripPadding ? out.replace(/X+$/, '') : out;
+            const hadPadding = stripped.length < out.length;
+            setResult({ text: stripped, type: 'decrypted', paddingRemoved: hadPadding ? out.length - stripped.length : 0 });
+            setOps(n => n + 1);
+        };
+
+        const copy = () => {
+            if (!result || result.type === 'error') return;
+            navigator.clipboard.writeText(result.text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        };
+
+        return (
+            <div className="page">
+                <div className="hero">
+                    <div className="eyebrow">Encryption Tool</div>
+                    <h1 className="hero-title">
+                        <ScrambleText text="COLUMNAR" delay={100} />{' '}
+                        <br/>
+                        <ScrambleText text="TRANSPOSITION" delay={400} className="line2" />
+                    </h1>
+                    <p className="hero-sub">
+                        A classical symmetric cipher that rearranges plaintext by reading
+                        columns in a key-determined order. Supports word keys and fixed-column modes.
+                    </p>
+                </div>
+
+                <div className="app-container">
+                    <div className="split">
+                        {/* Input pane */}
+                        <div className="pane">
+                            <div className="pane-header">
+                                <span className="pane-title">Configuration</span>
+                                <span className={`pane-dot ${text || key ? 'active' : ''}`} />
+                            </div>
+
+                            <div style={{marginBottom:'8px'}}>
+                                <div className="field-label" style={{marginBottom:'8px'}}>Key Mode</div>
+                                <div className="mode-toggle">
+                                    <button className={`mode-btn ${mode==='word'?'active':''}`} onClick={()=>{setMode('word');setKey('');}}>Word Key</button>
+                                    <button className={`mode-btn ${mode==='number'?'active':''}`} onClick={()=>{setMode('number');setKey('7');}}>Fixed Columns</button>
+                                </div>
+                            </div>
+
+                            <div className="hint">
+                                {mode === 'word'
+                                    ? <><strong>Word key:</strong> columns read in alphabetical order of key letters. <strong>ZEBRAS</strong> → order 6,3,2,4,1,5.</>
+                                    : <><strong>Fixed columns:</strong> message split into <strong>{key||'N'}</strong> equal columns, read left-to-right.</>
+                                }
+                            </div>
+
+                            <div className="field">
+                                <div className="field-label">
+                                    {mode==='word' ? 'Key Word' : 'Number of Columns'}
+                                    {numCols > 0 && <span className="count">{numCols} col{numCols!==1?'s':''}</span>}
+                                </div>
+                                <input
+                                    type={mode==='number'?'number':'text'}
+                                    value={key}
+                                    onChange={e=>setKey(e.target.value)}
+                                    placeholder={mode==='word'?'e.g. ZEBRAS':'e.g. 7'}
+                                    min={mode==='number'?1:undefined}
+                                />
+                            </div>
+
+                            <div className="field">
+                                <div className="field-label">
+                                    Message
+                                    <span className="count">{text.length.toLocaleString()} chars</span>
+                                </div>
+                                <textarea
+                                    value={text}
+                                    onChange={e=>setText(e.target.value)}
+                                    placeholder="Enter plaintext to encrypt, or ciphertext to decrypt..."
+                                />
+                            </div>
+
+                            <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'16px'}}>
+                                <label style={{display:'flex',alignItems:'center',gap:'7px',cursor:'pointer',userSelect:'none'}}>
+                                    <input
+                                        type="checkbox"
+                                        checked={stripPadding}
+                                        onChange={e => setStripPadding(e.target.checked)}
+                                        style={{width:'13px',height:'13px',accentColor:'var(--teal)',cursor:'pointer'}}
+                                    />
+                                    <span style={{fontSize:'0.68rem',fontWeight:'600',letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--subtle)'}}>
+                                        Strip X padding on decrypt
+                                    </span>
+                                </label>
+                            </div>
+
+                            <div className="actions">
+                                <button className="btn btn-encrypt" onClick={encrypt}>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                    Encrypt
+                                </button>
+                                <button className="btn btn-decrypt" onClick={decrypt}>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                                    Decrypt
+                                </button>
+                                <button className="btn btn-clear" onClick={clearAll} title="Clear">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Output pane */}
+                        <div className={`pane ${glowing ? 'pane-glow' : ''}`}>
+                            <div className="pane-header">
+                                <span className="pane-title">Output</span>
+                                <span className={`pane-dot ${result && result.type !== 'error' ? 'active' : ''}`} />
+                            </div>
+
+                            {!result ? (
+                                <div className="output-empty">
+                                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                    <p>Awaiting operation</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className={`result-badge badge-${result.type}`}>
+                                        <span style={{fontSize:'0.5rem'}}>●</span>
+                                        {result.type === 'encrypted' ? 'Encrypted' : result.type === 'decrypted' ? 'Decrypted' : 'Error'}
+                                    </div>
+                                    <div className={`result-block ${result.type==='error'?'error-text':''}`}>{result.type === 'encrypted' ? <ScrambleOutput text={result.text} animKey={animKey} /> : result.text}</div>
+                                        {result.type !== 'error' && (
+                                        <div className="result-footer">
+                                            <span className="result-meta-text">
+                                                Key: <span>{key}</span> · Cols: <span>{numCols}</span> · Len: <span>{result.text.length.toLocaleString()}</span>
+                                                {result.paddingRemoved > 0 && <span style={{color:'var(--teal)',marginLeft:'6px'}}>· {result.paddingRemoved}X padding stripped</span>}
+                                            </span>
+                                            <button className={`btn-copy ${copied?'copied':''}`} onClick={copy}>
+                                                {copied
+                                                    ? <><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg> Copied</>
+                                                    : <><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</>
+                                                }
+                                            </button>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<ColumnarApp />);
+</script>
+</body>
+</html>
