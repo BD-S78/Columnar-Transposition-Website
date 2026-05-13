@@ -1,9 +1,17 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "index.html", "use": "@vercel/static" }
+  "rewrites": [
+    { 
+      "source": "/(.*)", 
+      "destination": "/index.html",
+      "has": [
+        { "type": "header", "key": "x-not-a-static-file" }
+      ]
+    },
+    { "source": "/(.*)", "destination": "/$1" }
   ],
   "routes": [
+    { "src": "/styles.css", "dest": "/styles.css" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
