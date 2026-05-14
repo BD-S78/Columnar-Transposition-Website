@@ -15,124 +15,9 @@
 <div id="root"></div>
 <!--- inside this is react code that babel is translating-->
 <script type="text/babel">
-    const { useState, useEffect, useRef, useMemo } = React;
-    //functions for making the text look cooler with scrambling animation not important.
-    const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&';
+    const { useState, useMemo } = React;
 
-    function useScramble(target, delay = 0) {
-        const [display, setDisplay] = useState(() => target.split('').map(() => CHARS[Math.floor(Math.random() * CHARS.length)]).join(''));
-        const frameRef = useRef(null);
-        const intervalRef = useRef(null);
-
-        const runScramble = (initialDelay) => {
-            const timeout = setTimeout(() => {
-                let iteration = 0;
-                const total = target.length;
-                const tick = () => {
-                    setDisplay(() =>
-                        target.split('').map((char, i) => {
-                            if (char === ' ') return ' ';
-                            if (i < iteration) return char;
-                            return CHARS[Math.floor(Math.random() * CHARS.length)];
-                        }).join('')
-                    );
-                    iteration += 0.28;
-                    if (iteration < total + 1) {
-                        frameRef.current = requestAnimationFrame(tick);
-                    } else {
-                        setDisplay(target);
-                    }
-                };
-                frameRef.current = requestAnimationFrame(tick);
-            }, initialDelay);
-            return timeout;
-        };
-
-        useEffect(() => {
-            const firstRun = runScramble(delay);
-            return () => {
-                clearTimeout(firstRun);
-                if (frameRef.current) cancelAnimationFrame(frameRef.current);
-            };
-        }, [target, delay]);
-
-        return display;
-    }
-
-    function ScrambleText({ text, delay = 0, className = '' }) {
-        const display = useScramble(text, delay);
-        const locked = display === text;
-
-        return (
-            <span className={className}>
-                {display.split('').map((char, i) => (
-                    <span
-                        key={i}
-                        className={`scramble-char ${char !== text[i] ? 'scrambling' : 'locked'}`}
-                    >
-                        {char}
-                    </span>
-                ))}
-            </span>
-        );
-    }
-
-    function ScrambleNumber({ value }) {
-        const [display, setDisplay] = useState(value);
-        const prev = useRef(value);
-        const frame = useRef(null);
-
-        useEffect(() => {
-            if (value === prev.current) return;
-            prev.current = value;
-            let ticks = 0;
-            const run = () => {
-                setDisplay(Math.floor(Math.random() * 9999));
-                ticks++;
-                if (ticks < 8) frame.current = requestAnimationFrame(run);
-                else setDisplay(value);
-            };
-            frame.current = requestAnimationFrame(run);
-            return () => cancelAnimationFrame(frame.current);
-        }, [value]);
-
-        return <span>{display.toLocaleString()}</span>;
-    }
-
-    function ScrambleOutput({ text, animKey }) {
-        const [display, setDisplay] = useState('');
-        const frameRef = useRef(null);
-
-        useEffect(() => {
-            if (!text) return;
-            let iteration = 0;
-            const total = text.length;
-            const speed = Math.max(0.15, Math.min(0.6, 60 / total));
-
-            const tick = () => {
-                setDisplay(
-                    text.split('').map((char, i) => {
-                        if (i < iteration) return char;
-                        return CHARS[Math.floor(Math.random() * CHARS.length)];
-                    }).join('')
-                );
-                iteration += speed;
-                if (iteration < total + 1) {
-                    frameRef.current = requestAnimationFrame(tick);
-                } else {
-                    setDisplay(text);
-                }
-            };
-
-            frameRef.current = requestAnimationFrame(tick);
-            return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
-        }, [text, animKey]);
-
-        return (
-            <span>{display.split('').map((char, i) => (<span key={i} style={{color: char !== text[i] ? 'var(--teal)' : 'inherit', opacity: char !== text[i] ? 0.7 : 1}}>{char}</span>))}</span>
-        );
-    }
-
+    // Main application component for the Columnar Transposition Cipher
     function ColumnarApp() {
         const [mode, setMode] = useState('word');
         const [text, setText] = useState('');
@@ -141,7 +26,6 @@
         const [copied, setCopied] = useState(false);
         const [ops, setOps] = useState(0);
         const [stripPadding, setStripPadding] = useState(true);
-        const [animKey, setAnimKey] = useState(0);
         const [glowing, setGlowing] = useState(false);
 
         const numCols = useMemo(() => {
@@ -149,9 +33,9 @@
             return key.length;
         }, [mode, key]);
 
-        //helper function to get the reading order of columns, if the key mode is number, just 1, 2, 3, 4, order of the length of k length
-        //otherwise order based on the alphebatical order of each uppercase letter of the key word.
-        //return a array of the order each original 'column' should be read from for the ciphertext
+        // Helper function to determine the order in which columns should be read.
+        // For 'number' mode: returns a simple linear sequence [0, 1, 2...].
+        // For 'word' mode: returns indices based on the alphabetical order of characters in the key.
         const getSequence = (k, m) => {
             if (m === 'number') {
                 const n = parseInt(k) || 1;
@@ -163,9 +47,10 @@
                 .map(item => item.i); //now only have the original order ex [2 ,3 ,0, 1]
         };
 
+        // Resets the input text and result state
         const clearAll = () => { setText(''); setResult(null); };
 
-        //function for encrypting a input text with the key
+        // Core encryption logic: pads the message into a grid and reads it out column by column based on the sequence
         const encrypt = () => {
             //base cases if empty values or no columns return nothing
             if (!text) { setResult({ text: 'No message provided.', type: 'error' }); return; }
@@ -188,11 +73,11 @@
             seq.forEach(c => grid.forEach(row => out += row[c]));
             setResult({ text: out, type: 'encrypted' });
             setOps(n => n + 1);
-            setAnimKey(n => n + 1);
             setGlowing(true);
             setTimeout(() => setGlowing(false), 600);
         };
 
+        // Core decryption logic: reconstructs the grid from the ciphertext and reads it out row by row
         const decrypt = () => {
             if (!text) { setResult({ text: 'No ciphertext provided.', type: 'error' }); return; }
             if (!key)  { setResult({ text: `No ${mode==='word'?'key word':'column count'} provided.`, type: 'error' }); return; }
@@ -223,6 +108,7 @@
             setOps(n => n + 1);
         };
 
+        // Copies the current result text to the system clipboard
         const copy = () => {
             if (!result || result.type === 'error') return;
             navigator.clipboard.writeText(result.text);
@@ -230,6 +116,7 @@
             setTimeout(() => setCopied(false), 2000);
         };
 
+        // Custom copy handler to ensure only the selected text is copied without trailing newlines
         const copySelection = (event) => {
             const selection = window.getSelection();
             if (!selection || selection.isCollapsed) return;
@@ -244,9 +131,8 @@
                 <div className="hero">
                     <div className="eyebrow">Encryption Tool</div>
                     <h1 className="hero-title">
-                        <ScrambleText text="COLUMNAR" delay={100} />{' '}
-                        <br/>
-                        <ScrambleText text="TRANSPOSITION" delay={400} className="line2" />
+                        COLUMNAR <br/>
+                        <span className="line2">TRANSPOSITION</span>
                     </h1>
                     <p className="hero-sub">
                         A classical symmetric cipher that rearranges plaintext by reading
@@ -351,7 +237,7 @@
                                         <span style={{fontSize:'0.5rem'}}>●</span>
                                         {result.type === 'encrypted' ? 'Encrypted' : result.type === 'decrypted' ? 'Decrypted' : 'Error'}
                                     </div>
-                                    <div className={`result-block ${result.type==='error'?'error-text':''}`} onCopy={copySelection}>{result.type === 'encrypted' ? <ScrambleOutput text={result.text} animKey={animKey} /> : result.text}</div>
+                                    <div className={`result-block ${result.type==='error'?'error-text':''}`} onCopy={copySelection}>{result.text}</div>
                                         {result.type !== 'error' && (
                                         <div className="result-footer">
                                             <span className="result-meta-text">
