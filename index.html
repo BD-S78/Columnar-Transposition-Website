@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <title>Columnar Transposition Cipher</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔐</text></svg>">
+    <!--- importing these libraries here, so the code is easy to run just in 1 html file locally and css for better looks. -->
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -12,9 +13,10 @@
 </head>
 <body>
 <div id="root"></div>
+<!--- inside this is react code that babel is translating-->
 <script type="text/babel">
     const { useState, useEffect, useRef, useMemo } = React;
-
+    //functions for making the text look cooler with scrambling animation not important.
     const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&';
 
     function useScramble(target, delay = 0) {
@@ -147,33 +149,42 @@
             return key.length;
         }, [mode, key]);
 
+        //helper function to get the reading order of columns, if the key mode is number, just 1, 2, 3, 4, order of the length of k length
+        //otherwise order based on the alphebatical order of each uppercase letter of the key word.
+        //return a array of the order each original 'column' should be read from for the ciphertext
         const getSequence = (k, m) => {
             if (m === 'number') {
                 const n = parseInt(k) || 1;
                 return Array.from({length: n}, (_, i) => i);
             }
             return k.toUpperCase().split('')
-                .map((char, i) => ({ char, i }))
-                .sort((a, b) => a.char.localeCompare(b.char))
-                .map(item => item.i);
+                .map((char, i) => ({ char, i })) //original order
+                .sort((a, b) => a.char.localeCompare(b.char)) //sort of letters if same, then leftmost option is first
+                .map(item => item.i); //now only have the original order ex [2 ,3 ,0, 1]
         };
 
         const clearAll = () => { setText(''); setResult(null); };
 
+        //function for encrypting a input text with the key
         const encrypt = () => {
+            //base cases if empty values or no columns return nothing
             if (!text) { setResult({ text: 'No message provided.', type: 'error' }); return; }
             if (!key)  { setResult({ text: `No ${mode==='word'?'key word':'column count'} provided.`, type: 'error' }); return; }
             if (isNaN(numCols) || numCols < 1) { setResult({ text: 'Column count must be ≥ 1.', type: 'error' }); return; }
 
+            //padding the input text. Continue with 'X' to make a perfect rectangle if it wasn't a exact multiple of numcols.
             let padded = text;
             while (padded.length % numCols !== 0) padded += 'X';
 
             const seq = getSequence(key, mode);
             let grid = [];
+            //for loop each time push in that chuck of chars to the current row, until all completed
             for (let i = 0; i < padded.length; i += numCols)
                 grid.push(padded.slice(i, i + numCols).split(''));
 
             let out = '';
+            //for each column based on the sequence, 
+            //(inside loop go through each row of and add each char to output so that the column is done), finish with output
             seq.forEach(c => grid.forEach(row => out += row[c]));
             setResult({ text: out, type: 'encrypted' });
             setOps(n => n + 1);
@@ -192,16 +203,20 @@
             }
 
             const seq = getSequence(key, mode);
-            const numRows = text.length / numCols;
+            const numRows = text.length / numCols; //the cipheredtext must be a perfect rectangle due to padding of original text
             let cols = Array(numCols).fill('');
             let pos = 0;
+            //we read downwards down a column so now
+            //remake the columns, going by the sequence order, remove the size of numrows text and put it as the column there.
             seq.forEach(c => { cols[c] = text.substr(pos, numRows); pos += numRows; });
 
+            //now return by getting the output of letter by letter, finishing each row to complete all columns.
             let out = '';
             for (let r = 0; r < numRows; r++)
                 for (let c = 0; c < numCols; c++)
                     out += cols[c][r];
 
+            //if strip mode: remove all of the ending X if thye exist. (can erase extra intended X at end of plain text so we offer no stripping mode)
             const stripped = stripPadding ? out.replace(/X+$/, '') : out;
             const hadPadding = stripped.length < out.length;
             setResult({ text: stripped, type: 'decrypted', paddingRemoved: hadPadding ? out.length - stripped.length : 0 });
@@ -213,6 +228,15 @@
             navigator.clipboard.writeText(result.text);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
+        };
+
+        const copySelection = (event) => {
+            const selection = window.getSelection();
+            if (!selection || selection.isCollapsed) return;
+
+            const selectedText = selection.toString().replace(/[\r\n]+$/, '');
+            event.clipboardData.setData('text/plain', selectedText);
+            event.preventDefault();
         };
 
         return (
@@ -327,7 +351,7 @@
                                         <span style={{fontSize:'0.5rem'}}>●</span>
                                         {result.type === 'encrypted' ? 'Encrypted' : result.type === 'decrypted' ? 'Decrypted' : 'Error'}
                                     </div>
-                                    <div className={`result-block ${result.type==='error'?'error-text':''}`}>{result.type === 'encrypted' ? <ScrambleOutput text={result.text} animKey={animKey} /> : result.text}</div>
+                                    <div className={`result-block ${result.type==='error'?'error-text':''}`} onCopy={copySelection}>{result.type === 'encrypted' ? <ScrambleOutput text={result.text} animKey={animKey} /> : result.text}</div>
                                         {result.type !== 'error' && (
                                         <div className="result-footer">
                                             <span className="result-meta-text">
